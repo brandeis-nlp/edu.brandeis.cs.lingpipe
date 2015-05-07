@@ -3,14 +3,18 @@
 	<modelVersion>4.0.0</modelVersion>
 
 	<groupId>edu.brandeis.cs.lapps</groupId>
-	<artifactId>lingpipe</artifactId>
+	<artifactId>abner</artifactId>
 	<version>0.0.1</version>
 	<packaging>war</packaging>
-	<name>Web Services wrapping lingpipe</name>
+	<name>Web Services wrapping Abner</name>
 	<description>
 	</description>
 
 	<repositories>
+		<repository>
+			<id>my-local-repo</id>
+			<url>file://${basedir}/lib</url>
+		</repository>
 		<repository>
 			<id>clojars.org</id>
 			<url>http://clojars.org/repo</url>
@@ -48,6 +52,14 @@
 			<artifactId>lingpipe</artifactId>
 			<version>4.0.1</version>
 		</dependency>
+        
+      <dependency>
+          <groupId>abner</groupId>
+          <artifactId>abner</artifactId>
+          <version>1.5</version>
+		  <scope>system</scope>
+		  <systemPath>${basedir}\lib\abner-1.5.jar</systemPath>
+      </dependency>
 
 		<dependency>
 			<groupId>junit</groupId>
@@ -146,7 +158,7 @@
 	</dependencies>
 
 	<build>
-		<finalName>lingpipe#${project.version}</finalName>
+		<finalName>{project.artifactId}#${project.version}</finalName>
 		<plugins>
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>

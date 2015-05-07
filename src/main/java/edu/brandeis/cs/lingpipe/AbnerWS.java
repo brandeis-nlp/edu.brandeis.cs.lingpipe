@@ -1,5 +1,6 @@
 package edu.brandeis.cs.lingpipe;
 
+import abner.Tagger;
 import com.aliasi.chunk.*;
 import com.aliasi.util.AbstractExternalizable;
 
@@ -24,10 +25,14 @@ import java.util.Iterator;
  */
 public class AbnerWS implements WebService {
 
+    static Tagger taggerNLPBA = new Tagger(0);;
+    static Tagger taggerBIOCR = new Tagger(1);
+    static Tagger tagger = taggerNLPBA;
 
     public static String getResource(String name) throws IOException{
         java.io.InputStream in =  AbnerWS.class.getClassLoader().getResourceAsStream(name);
         return IOUtils.toString(in);
+//        GUI gui = new GUI();
     }
 
     public String execute(String s) {
@@ -55,13 +60,66 @@ public class AbnerWS implements WebService {
                 json.put("payload", payload);
             }
             payload.put("@context", "http://vocab.lappsgrid.org/context-1.0.0.jsonld");
-            String xml = getXml(txt);
+            JsonProxy.JsonArray annsobj = JsonProxy.newArray();
 
-            System.out.println("\nXML : \n-----------------------\n"+ xml);
-            String annotations =  Json2Json.xml2jsondsl(xml,
-                    getResource(this.getClass().getName()+".dsl"));
-            System.out.println("\nAnnotations : \n-----------------------\n"+ annotations);
-            JsonProxy.JsonObject annsobj = JsonProxy.newObject().read(annotations);
+            String iob = taggerNLPBA.tagIOB(txt);
+            int start = 0;
+            int end = 0;
+            int id = 0;
+//            System.out.println("iob="+iob);
+            for (String wordAndTag : iob.split("\\n")) {
+                String [] arr = wordAndTag.split("\t");
+                String word = arr[0];
+                String tag = arr[1];
+                start = txt.indexOf(word, end);
+                end = start + word.length();
+//                System.out.println("word="+word);
+//                System.out.println("Tag="+tag);
+//                System.out.println("Tag" + tag.equalsIgnoreCase("O"));
+                if(! tag.trim().equals("O")) {
+                    JsonProxy.JsonObject annobj = JsonProxy.newObject();
+                    annobj.put("id","ner"+id++);
+                    annobj.put("start", start);
+                    annobj.put("end", end);
+                    annobj.put("label", "http://vocab.lappsgrid.org/NamedEntity");
+                    JsonProxy.JsonObject features = JsonProxy.newObject();
+                    features.put("category", tag);
+                    features.put("word", word);
+                    annobj.put("features", features);
+                    annobj.put("label", "http://vocab.lappsgrid.org/NamedEntity");
+                    annsobj.add(annobj);
+                }
+            }
+
+            iob = taggerBIOCR.tagIOB(txt);
+            start = 0;
+            end = 0;
+//            System.out.println("iob="+iob);
+            for (String wordAndTag : iob.split("\\n")) {
+                String [] arr = wordAndTag.split("\t");
+                String word = arr[0];
+                String tag = arr[1];
+                start = txt.indexOf(word, end);
+                end = start + word.length();
+//                System.out.println("word="+word);
+//                System.out.println("Tag="+tag);
+//                System.out.println("Tag" + tag.equalsIgnoreCase("O"));
+                if(! tag.trim().equals("O")) {
+                    JsonProxy.JsonObject annobj = JsonProxy.newObject();
+                    annobj.put("id","ner"+id++);
+                    annobj.put("start", start);
+                    annobj.put("end", end);
+                    annobj.put("label", "http://vocab.lappsgrid.org/NamedEntity");
+                    JsonProxy.JsonObject features = JsonProxy.newObject();
+                    features.put("category", tag);
+                    features.put("word", word);
+                    annobj.put("features", features);
+                    annobj.put("label", "http://vocab.lappsgrid.org/NamedEntity");
+                    annsobj.add(annobj);
+                }
+            }
+
+
             JsonProxy.JsonArray viewsobj = null;
             if (payload.has("views")) {
                 viewsobj = (JsonProxy.JsonArray) payload.get("views");
@@ -72,9 +130,9 @@ public class AbnerWS implements WebService {
             JsonProxy.JsonObject view = JsonProxy.newObject();
             JsonProxy.JsonObject contains = JsonProxy.newObject();
             contains.put(Discriminators.Uri.NE,JsonProxy.newObject().put("producer", this.getClass().getName() + ": 0.0.1")
-                    .put("type", "ner:lingpipe"));
+                    .put("type", "ner:abner"));
             view.put("metadata", JsonProxy.newObject().put("contains", contains));
-            view.put("annotations", annsobj.get("annotations"));
+            view.put("annotations", annsobj);
             viewsobj.add(view);
             return json.toString();
         }catch (Throwable th) {
@@ -121,148 +179,9 @@ public class AbnerWS implements WebService {
         }
     }
 
-    static ConfidenceChunker confidChunker;
-    static NBestChunker nbestChunker;
-    static Chunker chunker;
-
-    public AbnerWS() {
-        synchronized (AbnerWS.class) {
-            if(confidChunker == null) {
-                File modelFile = FileUtils.toFile(AbnerWS.class.getResource("/ne-en-bio-genetag.HmmChunker"));
-                try {
-                    Object modelObj = AbstractExternalizable.readObject(modelFile);
-                    confidChunker = (ConfidenceChunker) modelObj;
-                    nbestChunker = (NBestChunker) modelObj;
-                    chunker = (Chunker) modelObj;
-                } catch (IOException e) {
-                    e.printStackTrace();
-                } catch (ClassNotFoundException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-    }
-
-    public static int MAX_N_BEST_CHUNKS = 16;
-    public static int MAX_N_BEST = 16;
-
-    // http://alias-i.com/lingpipe/demos/tutorial/ne/read-me.html
-    public String getConfidenceNERXml(String text) throws Exception {
-        char[] cs = text.toCharArray();
-        Iterator<Chunk> it
-                = confidChunker.nBestChunks(cs, 0, cs.length, MAX_N_BEST_CHUNKS);
-        System.out.println("Rank          Conf      Span    Type     Phrase");
-
-        XMLOutputFactory xmlOutputFactory = XMLOutputFactory.newInstance();
-        StringWriter sw = new StringWriter();
-        XMLStreamWriter xmlStreamWriter = xmlOutputFactory.createXMLStreamWriter(sw);
-        xmlStreamWriter.writeStartDocument();
-
-        xmlStreamWriter.writeStartElement("nBestEntities");
-        xmlStreamWriter.writeStartElement("s");
-        xmlStreamWriter.writeCharacters(text);
-        xmlStreamWriter.writeEndElement();
-        xmlStreamWriter.writeStartElement("confidence");
-        int pos = 0;
-        for (int n = 0; it.hasNext(); ++n) {
-            Chunk neChunk = it.next();
-            int start = neChunk.start();
-            int end = neChunk.end();
-            double condProb = Math.pow(2.0, neChunk.score());
-            String phrase = text.substring(start, end);
-                    System.out.println(n + " "
-                    + String.format("%6.4f",condProb)
-                    + "       (" + start
-                    + ", " + end
-                    + ")       " + neChunk.type()
-                    + "         " + phrase);
-//            System.out.println("\nPhrase = " + phrase);
-
-            String type = neChunk.type();
-            String chunkText = text.substring(start,end);
-//            System.out.println("start="+start+" end="+end);
-            xmlStreamWriter.writeStartElement("ENAMEX");
-            xmlStreamWriter.writeAttribute("TYPE", type);
-            xmlStreamWriter.writeAttribute("start", "" + start);
-            xmlStreamWriter.writeAttribute("end", "" + end);
-            xmlStreamWriter.writeAttribute("condProb", String.format("%6.4f", condProb));
-            xmlStreamWriter.writeAttribute("TEXT", chunkText);
-            xmlStreamWriter.writeCharacters(chunkText);
-            xmlStreamWriter.writeEndElement();
-        }
-        xmlStreamWriter.writeEndElement();
-        xmlStreamWriter.writeEndElement();
-        xmlStreamWriter.writeEndDocument();
-        xmlStreamWriter.flush();
-        xmlStreamWriter.close();
-        return  sw.toString();
-    }
-
-    public String getNBestNERXml(String text) throws Exception {
-        char[] cs = text.toCharArray();
-        Iterator<ScoredObject<Chunking>> it = nbestChunker.nBest(cs,0,cs.length,MAX_N_BEST);
-        System.out.println(text);
-        for (int n = 0; it.hasNext(); ++n) {
-            ScoredObject so = it.next();
-            double jointProb = so.score();
-            Chunking chunking = (Chunking) so.getObject();
-            System.out.println(n + " " + jointProb
-                    +  " " + chunking.chunkSet());
-            for(Chunk chunk:chunking.chunkSet()) {
-                int start = chunk.start();
-                int end = chunk.end();
-                String phrase = text.substring(start, end);
-                System.out.println(n + " "
-                        + String.format("%6.4f", Math.pow(2.0, chunk.score()))
-                        + "       (" + start
-                        + ", " + end
-                        + ")       " + chunk.type()
-                        + "         " + phrase);
-
-
-            }
-        }
-        return null;
-    }
 
     public String getXml(String text) throws Exception {
-        Chunking chunking = chunker.chunk(text);
-        System.out.println("Chunking=" + chunking);
-        int n = 0;
-
-        XMLOutputFactory xmlOutputFactory = XMLOutputFactory.newInstance();
-        StringWriter sw = new StringWriter();
-        XMLStreamWriter xmlStreamWriter = xmlOutputFactory.createXMLStreamWriter(sw);
-        xmlStreamWriter.writeStartDocument();
-
-        xmlStreamWriter.writeStartElement("Entities");
-        xmlStreamWriter.writeStartElement("s");
-        xmlStreamWriter.writeCharacters(text);
-        xmlStreamWriter.writeEndElement();
-        xmlStreamWriter.writeStartElement("ChunkSet");
-        for(Chunk chunk:chunking.chunkSet()) {
-            int start = chunk.start();
-            int end = chunk.end();
-            String phrase = text.substring(start, end);
-            System.out.println(n++ + " "
-                    + String.format("%6.4f", Math.pow(2.0, chunk.score()))
-                    + "       (" + start
-                    + ", " + end
-                    + ")       " + chunk.type()
-                    + "         " + phrase);
-
-            xmlStreamWriter.writeStartElement("Chunk");
-            xmlStreamWriter.writeAttribute("TYPE", chunk.type());
-            xmlStreamWriter.writeAttribute("start", "" + start);
-            xmlStreamWriter.writeAttribute("end", "" + end);
-            xmlStreamWriter.writeCharacters(phrase);
-            xmlStreamWriter.writeEndElement();
-        }
-        xmlStreamWriter.writeEndElement();
-        xmlStreamWriter.writeEndElement();
-        xmlStreamWriter.writeEndDocument();
-        xmlStreamWriter.flush();
-        xmlStreamWriter.close();
-        return  sw.toString();
+        System.out.println(tagger.tagSGML(text));
+        return tagger.tagABNER(text);
     }
 }

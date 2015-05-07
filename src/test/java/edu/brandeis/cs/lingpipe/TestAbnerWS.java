@@ -10,10 +10,9 @@ public class TestAbnerWS {
 
     @Test
     public void testXml() throws Exception{
-        System.out.println(lingpipe.getConfidenceNERXml("beautiful gene saf sas p53"));
-//        System.out.println(lingpipe.getNBestNERXml("beautiful gene saf sas p53"));
         System.out.println(lingpipe.getXml("p53 regulates human insulin-like growth factor II gene expression through active P4 promoter in rhabdomyosarcoma cells."));
     }
+
     @Test
     public void testText() throws Exception {
         System.out.println(lingpipe.execute("beautiful gene saf sas p53"));
